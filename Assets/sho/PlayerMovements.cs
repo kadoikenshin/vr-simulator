@@ -1,21 +1,69 @@
 using System.Numerics;
 using NUnit.Framework.Constraints;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class PlayerMovements : MonoBehaviour
 {
-  // 移動速度
-  public float moveSpeed = 5.0f;
+  [Header("移動スピード設定")]
+  public float walkSpeed = 5.0f;
+  public float fastSpeed = 8.0f;
+  public float crouchSpeed = 3.5f;
 
+  [Header("姿勢(頭の高さ)設定")]
+  public float standingHeight = 1.7f;
+  public float crouchingHeight = 0.9f;
+  public float postureChangeSpeed = 0.8f;
+
+  [Header("マウス視点感度")]
+  public float mouseSensitivity = 0.15f;
+
+  [HideInInspector] public bool isCrouching = false;
+  [HideInInspector] public bool isFastMoving = false;
+
+  private float cameraPitch = 0f;
+
+  void Start()
+  {
+    UnityEngine.Vector3 pos = transform.position;
+    pos.y = standingHeight;
+    transform.position = pos;
+
+    Cursor.lockState = CursorLockMode.Locked;
+    Cursor.visible = false;
+  }
   void Update()
   {
+    if(Keyboard.current == null) return;
+
+    //ESCキーを押したらマウスカーソルを一時的に解除(カーソル操作できるようにする:true)
+    if(Keyboard.current.escapeKey.wasPressedThisFrame)
+    {
+      Cursor.lockState = CursorLockMode.None;
+      Cursor.visible = true;
+    }
+
+    //ゲーム画面をもう一度クリックしたら再びロックする
+    else if(Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+    {
+      Cursor.lockState = CursorLockMode.Locked;
+      Cursor.visible = false;
+    }
+
+    //しゃがみ、速足の状態判定
+    isCrouching = Keyboard.current.cKey.isPressed || Keyboard.current.leftCtrlKey.isPressed;
+    isFastMoving = !isCrouching  && Keyboard.current.leftShiftKey.isPressed;
+
+    float currentSpeed = walkSpeed;
+    if(isCrouching) currentSpeed = crouchSpeed;
+    else if(isFastMoving) currentSpeed = fastSpeed;
+
+
     // Horizontal: 左右キー
     float moveX = 0f;
-
     // Vertical:  前後キー
     float moveZ = 0f;
-
     if (Keyboard.current != null)
     {
       if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed) moveX = -1f;
@@ -24,10 +72,31 @@ public class PlayerMovements : MonoBehaviour
       if (Keyboard.current.wKey.isPressed || Keyboard.current.upArrowKey.isPressed) moveZ = 1f;
     }
 
-    //移動する方向と距離の計算
-    UnityEngine.Vector3 moveDir = new UnityEngine.Vector3(moveX, 0f, moveZ);
+    UnityEngine.Vector3 forward = transform.forward;
+    UnityEngine.Vector3 right = transform.right;
+    forward.y = 0f;
+    right.y = 0f;
+    UnityEngine.Vector3 moveDir = (forward.normalized * moveZ + right.normalized * moveX).normalized;
+    transform.position += moveDir * currentSpeed * Time.deltaTime;
 
-    transform.Translate(moveDir * moveSpeed * Time.deltaTime, Space.World);
+    //しゃがみによる高さ
+    float targetY = isCrouching ? crouchingHeight : standingHeight;
+    UnityEngine.Vector3 currentPos = transform.position;
+    currentPos.y = Mathf.Lerp(currentPos.y ,targetY,Time.deltaTime*postureChangeSpeed);
+    transform.position = currentPos;
+
+    if(Mouse.current != null && Cursor.lockState == CursorLockMode.Locked)
+    {
+      UnityEngine.Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+
+      //左右の首の振り
+      transform.Rotate(0f, mouseDelta.x * mouseSensitivity, 0f, Space.World);
+
+      //上下の首の振り
+      cameraPitch -= mouseDelta.y * mouseSensitivity;
+      cameraPitch = Mathf.Clamp(cameraPitch,-80f,80f);
+      transform.localEulerAngles = new UnityEngine.Vector3(cameraPitch,transform.localEulerAngles.y,0f);
+    }
   }
 
 }
